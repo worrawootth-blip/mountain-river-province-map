@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>สร้างแผนที่ภูมิประเทศ – เทือกเขา แม่น้ำ</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,600;0,800;1,400;1,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{--bg:#0f1f2b;--panel:#16303f;--ink:#eaf3f7;--mut:#9fb8c4;--acc:#f0a02c;--acc2:#2c8fd8;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Sarabun,"Noto Sans Thai",Tahoma,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:18px 20px 8px;max-width:1280px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:1.6rem;font-weight:800}
+  header p{margin:0;color:var(--mut)}
+  .wrap{max-width:1280px;margin:0 auto;padding:10px 20px 40px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;background:var(--panel);padding:14px;border-radius:14px}
+  .bar input[type=text]{flex:1 1 320px;min-width:200px;padding:13px 16px;font:inherit;font-size:1.1rem;border-radius:10px;border:2px solid transparent;background:#0c1a23;color:var(--ink)}
+  .bar input[type=text]:focus{outline:none;border-color:var(--acc2)}
+  button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 22px;cursor:pointer;color:#1b1204;background:var(--acc)}
+  button.sec{background:var(--acc2);color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+  .chip{background:#1f4256;color:var(--ink);padding:6px 12px;border-radius:999px;font-size:.92rem;cursor:pointer;border:1px solid #2b5a75}
+  .chip:hover{background:#27546e}
+  .chip.on{background:var(--acc);color:#1b1204;border-color:var(--acc)}
+  .opts{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:12px 0;padding:12px 14px;background:var(--panel);border-radius:14px;font-size:.95rem}
+  .opts label{display:flex;gap:6px;align-items:center;cursor:pointer}
+  .opts select,.opts input[type=range]{font:inherit}
+  .opts select{padding:5px 8px;border-radius:8px;background:#0c1a23;color:var(--ink);border:1px solid #2b5a75}
+  .status{min-height:24px;color:var(--mut);margin:6px 2px}
+  .stage{position:relative;background:#0a141b;border-radius:14px;overflow:hidden}
+  canvas{display:block;width:100%;height:auto}
+  .busy{position:absolute;inset:0;background:rgba(8,16,22,.55);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-size:1.1rem}
+  .busy.show{display:flex}
+  .spin{width:46px;height:46px;border:5px solid #ffffff44;border-top-color:var(--acc);border-radius:50%;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .wm{margin:12px 0;background:var(--panel);border-radius:14px;padding:12px}
+  .wm-h{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .wm-h b{font-size:1.1rem}
+  #wmap{height:480px;border-radius:10px;background:#0a141b;z-index:0}
+  .wm-hint{color:var(--mut);font-size:.88rem;margin-top:8px}
+  .lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px}
+  .lc{background:var(--panel);border-radius:14px;padding:12px 16px}
+  .lc h3{margin:0 0 6px;font-size:1.05rem;color:var(--acc)}
+  .lc ul{margin:0;padding-left:20px;line-height:1.55;font-size:.95rem}
+  .lc .none{margin:0;color:var(--mut);font-size:.9rem}
+  .note{color:var(--mut);font-size:.85rem;margin-top:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <h1>🗺️ สร้างแผนที่ภูมิประเทศ</h1>
+  <p>พิมพ์ชื่อสถานที่ (จังหวัด อำเภอ ภูเขา อุทยาน ฯลฯ) แล้วกดค้นหา ระบบจะสร้างแผนที่เงาภูเขา แม่น้ำสายหลัก เข็มทิศ และมาตราส่วน</p>
+</header>
+<div class="wrap">
+  <div class="bar">
+    <input id="q" type="text" placeholder="เช่น ขอนแก่น, เชียงใหม่, ดอยอินทนนท์, ทุ่งกุลาร้องไห้ …" autocomplete="off">
+    <button id="go">🔍 ค้นหา</button>
+    <button id="save" class="sec" disabled>💾 บันทึกเป็น PNG</button>
+  </div>
+  <div class="chips" id="examples"></div>
+  <div class="chips" id="results"></div>
+
+  <div class="opts">
+    <label>รูปแบบ
+      <select id="style">
+        <option value="imagery">ภาพถ่าย + เงาภูเขา</option>
+        <option value="relief">สีภูมิประเทศ (เงาภูเขา)</option>
+        <option value="imageonly">ภาพถ่ายอย่างเดียว</option>
+      </select>
+    </label>
+    <label>ความเข้มเงาภูเขา <input id="relief" type="range" min="0" max="150" value="100"></label>
+    <label>ซูมออก <input id="pad" type="range" min="1.2" max="4" step="0.1" value="1.9"></label>
+    <label><input type="checkbox" id="cRegion" checked> พื้นที่ค้นหา</label>
+    <label><input type="checkbox" id="cBorder" checked> ขอบเขตจังหวัด</label>
+    <label><input type="checkbox" id="cDistrict" checked> อำเภอ</label>
+    <label><input type="checkbox" id="cSub" checked> ตำบล</label>
+    <label><input type="checkbox" id="cPark" checked> อุทยานแห่งชาติ</label>
+    <label><input type="checkbox" id="cRiver" checked> แม่น้ำ</label>
+    <label><input type="checkbox" id="cPeak" checked> ยอดเขา/เทือกเขา</label>
+    <label><input type="checkbox" id="cTown" checked> เมือง</label>
+    <label><input type="checkbox" id="cProv" checked> ชื่อจังหวัดข้างเคียง</label>
+    <label><input type="checkbox" id="cInfo" checked> แผนที่ย่อ/กล่องข้อมูล</label>
+    <button id="retry" class="sec" type="button" style="padding:6px 14px">🔄 ดึงข้อมูลชื่อ/เส้นใหม่</button>
+  </div>
+  <div class="wm" id="wmWrap">
+    <div class="wm-h">
+      <b>🌍 แผนที่โลก (ซูม/เลื่อนได้)</b>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="sec" id="wmWorld" type="button">ดูทั้งโลก</button>
+        <button id="wmMake" type="button">🗺️ สร้างแผนที่ภูมิประเทศจากมุมมองนี้</button>
+      </span>
+    </div>
+    <div id="wmap"></div>
+    <div class="wm-hint">ใช้ล้อเมาส์/ปุ่ม +/− หรือถ่างนิ้วเพื่อซูม ลากเพื่อเลื่อน • เมื่อค้นหา แผนที่จะบินไปยังตำแหน่งนั้นโดยอัตโนมัติ • ซูมไปยังพื้นที่ที่ต้องการแล้วกด “สร้างแผนที่ภูมิประเทศจากมุมมองนี้”</div>
+  </div>
+  <div class="status" id="status">พร้อมใช้งาน – พิมพ์ชื่อสถานที่แล้วกดค้นหา</div>
+  <div class="stage">
+    <canvas id="map"></canvas>
+    <div class="busy" id="busy"><div class="spin"></div><div id="busyTxt">กำลังโหลด…</div></div>
+  </div>
+  <div class="lists" id="lists"></div>
+  <div class="note">
+    ต้องเชื่อมต่ออินเทอร์เน็ต • ภาพภูมิประเทศ: Esri World Imagery / World Hillshade • ชื่อสถานที่ แม่น้ำ ขอบเขต: © OpenStreetMap contributors (Nominatim + Overpass API)
+    • หากค้นหาไม่ติดให้ลองชื่อที่ชัดเจนขึ้น เช่น "จังหวัดสุรินทร์" หรือเลือกผลลัพธ์อื่นจากรายการด้านบน
+  </div>
+</div>
+
+<script>
+/* ================= ค่าคงที่ ================= */
+const W = 1600, H = 1500;
+const FONT = 'Sarabun,"Noto Sans Thai",Tahoma,sans-serif';
+const $ = id => document.getElementById(id);
+const canvas = $('map'); canvas.width = W; canvas.height = H;
+const ctx = canvas.getContext('2d');
+
+const LAYERS = {
+  imagery: { maxZ: 13, url: (z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}` },
+  hill:    { maxZ: 13, url: (z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/${z}/${y}/${x}` },
+  gray:    { maxZ: 12, url: (z,x,y)=>`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${y}/${x}` }
+};
+const OVP = ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+
+/* พื้นที่ของกล่องต่างๆ (ใช้กันไม่ให้ป้ายชื่อซ้อน) */
+const BOX = {
+  title : {x:40,  y:40,     w:780, h:200},
+  legend: {x:W-420,y:40,    w:380, h:540},
+  inset : {x:40,  y:H-340,  w:300, h:300},
+  info  : {x:360, y:H-300,  w:660, h:260},
+  scale : {x:W-520,y:H-150, w:480, h:110},
+  comp  : {x:W-200,y:H-335, w:160, h:180}
+};
+
+const S = { token:0, otok:0, ready:false, fin:false, span:10, cur:null, view:null, iv:null, fbox:null, P:null, riv:null, bord:null };
+
+/* ================= Mercator ================= */
+const mx = lon => (lon+180)/360;
+const my = lat => { lat=Math.max(-85,Math.min(85,lat)); const s=Math.sin(lat*Math.PI/180); return 0.5-Math.log((1+s)/(1-s))/(4*Math.PI); };
+const ilon = nx => nx*360-180;
+const ilat = ny => 180/Math.PI*Math.atan(Math.sinh(Math.PI*(1-2*ny)));
+function makeView(cx,cy,wn,w,h){ const hn=wn*h/w; return {nx0:cx-wn/2, ny0:cy-hn/2, wn, hn, K:w/wn, w, h}; }
+const pr = (v,lon,lat) => [(mx(lon)-v.nx0)*v.K, (my(lat)-v.ny0)*v.K];
+const viewBBox = v => ({w:ilon(v.nx0), e:ilon(v.nx0+v.wn), n:ilat(v.ny0), s:ilat(v.ny0+v.hn)});
+
+/* ================= Tiles ================= */
+const tileCache = new Map(), tileImg = new Map();
+function loadTile(layer,z,x,y){
+  const key=`${layer}/${z}/${x}/${y}`;
+  if(tileCache.has(key)) return tileCache.get(key);
+  const p = new Promise(res=>{
+    const img=new Image(); img.crossOrigin='anonymous';
+    img.onload=()=>{tileImg.set(key,img);res(img)};
+    img.onerror=()=>res(null);
+    img.src=LAYERS[layer].url(z,x,y);
+  });
+  tileCache.set(key,p); return p;
+}
+function tileList(v,layer){
+  const z=Math.max(0,Math.min(LAYERS[layer].maxZ,Math.round(Math.log2(v.K/256))));
+  const n=2**z, list=[];
+  const x0=Math.floor(v.nx0*n), x1=Math.floor((v.nx0+v.wn)*n);
+  const y0=Math.max(0,Math.floor(v.ny0*n)), y1=Math.min(n-1,Math.floor((v.ny0+v.hn)*n));
+  for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) list.push({z,n,x:((x%n)+n)%n,xr:x,y});
+  return list;
+}
+async function ensureTiles(layer,v,cb){
+  const list=tileList(v,layer); let i=0;
+  await Promise.all(Array.from({length:10},async()=>{
+    while(i<list.length){ const t=list[i++]; await loadTile(layer,t.z,t.x,t.y); cb&&cb(); }
+  }));
+}
+function drawTiles(c,layer,v){
+  for(const t of tileList(v,layer)){
+    const img=tileImg.get(`${layer}/${t.z}/${t.x}/${t.y}`); if(!img) continue;
+    const size=v.K/t.n;
+    c.drawImage(img,(t.xr/t.n-v.nx0)*v.K,(t.y/t.n-v.ny0)*v.K,size+0.8,size+0.8);
+  }
+}
+
+/* ================= Network ================= */
+async function geocode(q){
+  const u=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=jsonv2&polygon_geojson=1&polygon_threshold=0.004&limit=6&accept-language=th`;
+  const r=await fetch(u); if(!r.ok) throw new Error('geocode');
+  return r.json();
+}
+async function overpass(q){
+  for(let round=0;round<2;round++){
+    for(const u of OVP){
+      try{
+        const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),75000);
+        const r=await fetch(u,{method:'POST',body:'data='+encodeURIComponent(q),headers:{'Content-Type':'application/x-www-form-urlencoded'},signal:ctl.signal});
+        clearTimeout(t); if(!r.ok) continue;
+        const j=await r.json(); return j.elements||[];
+      }catch(e){}
+    }
+    await sleep(2500);
+  }
+  return null;
+}
+
+/* ================= Helper วาด ================= */
+function rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function card(b,alpha=0.88){ ctx.save(); rr(ctx,b.x,b.y,b.w,b.h,18); ctx.fillStyle=`rgba(255,255,255,${alpha})`; ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowBlur=18; ctx.fill(); ctx.shadowBlur=0; ctx.strokeStyle='rgba(30,40,50,.35)'; ctx.lineWidth=2; ctx.stroke(); ctx.restore(); }
+function setFont(o){ ctx.font=`${o.italic?'italic ':''}${o.weight||600} ${o.size}px ${FONT}`; if('letterSpacing' in ctx) ctx.letterSpacing=(o.spacing||0)+'px'; }
+function tw(t,o){ setFont(o); const w=ctx.measureText(t).width; if('letterSpacing' in ctx) ctx.letterSpacing='0px'; return w; }
+function txt(t,x,y,o){
+  setFont(o); ctx.textAlign=o.align||'center'; ctx.textBaseline='middle'; ctx.lineJoin='round';
+  if(o.halo!==null){ ctx.lineWidth=o.haloW||Math.max(4,o.size/5); ctx.strokeStyle=o.halo||'rgba(0,0,0,.65)'; ctx.strokeText(t,x,y); }
+  ctx.fillStyle=o.color||'#fff'; ctx.fillText(t,x,y);
+  if('letterSpacing' in ctx) ctx.letterSpacing='0px';
+}
+const placed=[];
+function freeRect(r,force){
+  if(!force){
+    if(r[0]<12||r[2]>W-12||r[1]<12||r[3]>H-12) return false;
+    for(const p of placed) if(!(r[2]<p[0]||r[0]>p[2]||r[3]<p[1]||r[1]>p[3])) return false;
+  }
+  placed.push(r); return true;
+}
+function place(t,x,y,o,force){
+  const w=tw(t,o), h=o.size*1.15, left=o.align==='left';
+  const cx=left?x+w/2:x;
+  if(!freeRect([cx-w/2-4,y-h/2-2,cx+w/2+4,y+h/2+2],force)) return false;
+  txt(t,x,y,o); return true;
+}
+function placeRot(t,x,y,ang,o){
+  const w=tw(t,o), h=o.size*1.2;
+  const bw=Math.abs(w*Math.cos(ang))+Math.abs(h*Math.sin(ang)), bh=Math.abs(w*Math.sin(ang))+Math.abs(h*Math.cos(ang));
+  if(!freeRect([x-bw/2,y-bh/2,x+bw/2,y+bh/2])) return false;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(ang); txt(t,0,0,o); ctx.restore(); return true;
+}
+function segWords(t){ try{ return [...new Intl.Segmenter('th',{granularity:'word'}).segment(t)].map(s=>s.segment); }catch(e){ return [...t]; } }
+function wrap(t,maxW,o,maxLines){
+  const words=segWords(t), lines=[]; let cur='';
+  for(const w of words){
+    if(tw(cur+w,o)>maxW && cur){ lines.push(cur.trim()); cur=w; if(lines.length>=maxLines) break; } else cur+=w;
+  }
+  if(lines.length<maxLines && cur) lines.push(cur.trim());
+  if(lines.length===maxLines && words.join('')!==lines.join('')) lines[maxLines-1]=lines[maxLines-1].replace(/.$/,'')+'…';
+  return lines;
+}
+const strip = s => (s||'').replace(/^(จังหวัด|อำเภอ|เขต|แขวง)\s*/,'');
+const tn = t => t['name:th']||t.name||'';
+function plen(p){ let l=0; for(let i=1;i<p.length;i++) l+=Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]); return l; }
+function simp(p,min=1.6){ const o=[p[0]]; for(let i=1;i<p.length;i++){ const a=o[o.length-1]; if(Math.hypot(p[i][0]-a[0],p[i][1]-a[1])>=min) o.push(p[i]); } return o; }
+function pointAt(p,d){ let c=0; for(let i=1;i<p.length;i++){ const s=Math.hypot(p[i][0]-p[i-1][0],p[i][1]-p[i-1][1]); if(c+s>=d){ const t=(d-c)/(s||1); return [p[i-1][0]+(p[i][0]-p[i-1][0])*t,p[i-1][1]+(p[i][1]-p[i-1][1])*t]; } c+=s; } return p[p.length-1]; }
+function polyline(c,p){ c.beginPath(); p.forEach((q,i)=>i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1])); c.stroke(); }
+function hatch(){
+  const c=document.createElement('canvas'); c.width=c.height=14; const g=c.getContext('2d');
+  g.fillStyle='rgba(255,196,90,.30)'; g.fillRect(0,0,14,14);
+  g.strokeStyle='rgba(255,150,30,.9)'; g.lineWidth=2; g.beginPath();
+  g.moveTo(-2,16); g.lineTo(16,-2); g.moveTo(-2,2); g.lineTo(2,-2); g.moveTo(12,16); g.lineTo(16,12); g.stroke();
+  return ctx.createPattern(c,'repeat');
+}
+function geoPath(c,geo,v){
+  const polys=geo.type==='Polygon'?[geo.coordinates]:geo.type==='MultiPolygon'?geo.coordinates:[];
+  c.beginPath();
+  for(const poly of polys) for(const ring of poly){
+    ring.forEach(([lo,la],i)=>{ const [x,y]=pr(v,lo,la); i?c.lineTo(x,y):c.moveTo(x,y); });
+    c.closePath();
+  }
+  return polys.length>0;
+}
+
+/* ================= ประมวลผลข้อมูล OSM ================= */
+function processPoints(els){
+  const v=S.view, P=S.P||(S.P={peaks:[],towns:[],ranges:[],provs:[],dists:[],subs:[],parks:[],lakes:[]});
+  for(const e of els){
+    const t=e.tags||{}, name=tn(t); if(!name) continue;
+    const ll=e.center?[e.center.lon,e.center.lat]:[e.lon,e.lat]; if(ll[0]==null||ll[1]==null) continue;
+    const [x,y]=pr(v,ll[0],ll[1]), al=t.admin_level;
+    const o={name,x,y,t}; let kind=null;
+    if(t.natural==='peak'){ kind='peaks'; o.ele=parseFloat(t.ele)||0; }
+    else if(t.place==='city'||t.place==='town'){ kind='towns'; o.city=t.place==='city'; o.pop=parseInt(t.population)||0; }
+    else if(t.natural==='mountain_range'||t.natural==='ridge') kind='ranges';
+    else if(t.boundary==='national_park'||(t.boundary==='protected_area'&&t.protect_class==='2')) kind='parks';
+    else if(t.boundary==='administrative'&&al==='4') kind='provs';
+    else if(t.boundary==='administrative'&&al==='6') kind='dists';
+    else if(t.boundary==='administrative'&&al==='8') kind='subs';
+    else if(t.natural==='water') kind='lakes';
+    if(!kind) continue;
+    if(kind!=='dists'&&kind!=='subs'&&P[kind].some(q=>q.name===name)) continue;
+    const inView=x>=0&&x<=W&&y>=0&&y<=H; o.inView=inView;
+    if(kind==='provs'||kind==='parks'){
+      const lim=kind==='parks'?400:2*W;
+      if(x<-lim||x>W+lim||y<-lim||y>H+lim) continue;
+      o.x=Math.max(130,Math.min(W-130,x)); o.y=Math.max(90,Math.min(H-90,y));
+    } else if(!inView) continue;
+    P[kind].push(o);
+  }
+  P.peaks.sort((a,b)=>b.ele-a.ele);
+  P.towns.sort((a,b)=>(b.city-a.city)||(b.pop-a.pop));
+}
+const inV=p=>p[0]>-60&&p[0]<W+60&&p[1]>-60&&p[1]<H+60;
+function processRivers(els,src){
+  S.rivEls=S.rivEls||[]; els.forEach(e=>{ e._src=src; S.rivEls.push(e); }); rebuildRivers();
+}
+function rebuildRivers(){
+  const v=S.view, list=[], per={};
+  for(const e of S.rivEls||[]){
+    if(!e.geometry||e.geometry.length<2) continue;
+    const pts=simp(e.geometry.map(g=>pr(v,g.lon,g.lat))); if(pts.length<2) continue;
+    let len=0,vlen=0;
+    for(let i=1;i<pts.length;i++){ const d=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]); len+=d; if(inV(pts[i])||inV(pts[i-1])) vlen+=d; }
+    if(vlen<1) continue;
+    const name=tn(e.tags||{}); list.push({name,pts,len,vlen});
+    if(name){ const m=per[e._src]||(per[e._src]=new Map()); m.set(name,(m.get(name)||0)+vlen); }
+  }
+  const lens=new Map(); Object.values(per).forEach(m=>m.forEach((l,n)=>lens.set(n,Math.max(lens.get(n)||0,l))));
+  const top=[...lens.entries()].filter(x=>x[1]>=150).sort((a,b)=>b[1]-a[1]).slice(0,8).map(x=>x[0]);
+  list.forEach(o=>o.main=top.includes(o.name)); S.riv={list,top,lens};
+}
+/* ---- ขอบเขตการปกครองไทย (จังหวัด/อำเภอ/ตำบล) จากไฟล์ GeoJSON สาธารณะ ---- */
+const GEO_FILE={prov:'provinces.geojson',dist:'districts.geojson',sub:'subdistricts.geojson'};
+const GEO_BASE=['https://raw.githubusercontent.com/chingchai/OpenGISData-Thailand/master/','https://cdn.jsdelivr.net/gh/chingchai/OpenGISData-Thailand@master/'];
+const geoCache={};
+function loadGeo(k){
+  if(geoCache[k]) return geoCache[k];
+  return geoCache[k]=(async()=>{
+    for(const b of GEO_BASE){ try{ const r=await fetch(b+GEO_FILE[k]); if(r.ok) return await r.json(); }catch(e){} }
+    delete geoCache[k]; return null;
+  })();
+}
+const overlapsThai=vb=>!(vb.e<97.3||vb.w>105.7||vb.n<5.5||vb.s>20.5);
+function bboxOf(g){
+  let a=1e9,b=1e9,c=-1e9,d=-1e9; const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+  for(const poly of polys) for(const ring of poly) for(const q of ring){ if(q[0]<a)a=q[0]; if(q[0]>c)c=q[0]; if(q[1]<b)b=q[1]; if(q[1]>d)d=q[1]; }
+  return [a,b,c,d];
+}
+function addThaiAdmin(kind,data){
+  const v=S.view, vb=viewBBox(v), lvl={prov:'4',dist:'6',sub:'8'}[kind], els=[]; S.bord=S.bord||[];
+  for(const f of data.features){
+    const g=f.geometry; if(!g||!g.coordinates) continue;
+    const bb=f._bb||(f._bb=bboxOf(g));
+    if(bb[2]<vb.w||bb[0]>vb.e||bb[3]<vb.s||bb[1]>vb.n) continue;
+    const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+    for(const poly of polys) for(const ring of poly){ const pts=simp(ring.map(c=>pr(v,c[0],c[1])),1.4); if(pts.length>1) S.bord.push({lvl,pts}); }
+    const pp=f.properties||{}, name=kind==='prov'?pp.pro_th:kind==='dist'?pp.amp_th:pp.tam_th;
+    if(name) els.push({lat:pp.lat,lon:pp.lon,tags:{name,boundary:'administrative',admin_level:lvl}});
+  }
+  processPoints(els);
+}
+function processBorders(els,append){
+  const v=S.view, list=(append&&S.bord)?S.bord:[];
+  for(const e of els){
+    const al=String(e.tags&&e.tags.admin_level), geoms=[];
+    if(e.type==='relation'){ for(const m of e.members||[]) if(m.geometry&&m.geometry.length>1) geoms.push(m.geometry); }
+    else if(e.geometry&&e.geometry.length>1) geoms.push(e.geometry);
+    for(const g of geoms){ const pts=simp(g.map(q=>pr(v,q.lon,q.lat))); if(pts.length>1) list.push({lvl:al,pts}); }
+  }
+  S.bord=list;
+}
+
+/* ================= วาดแผนที่ ================= */
+function draw(){
+  ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,W,H);
+  const v=S.view;
+  if(!v){ placeholder(); ctx.restore(); return; }
+  placed.length=0;
+  const style=$('style').value, s=$('relief').value/100;
+
+  /* --- พื้นหลัง/ภูมิประเทศ --- */
+  ctx.fillStyle = style==='relief' ? '#e2d5a8' : '#31422f'; ctx.fillRect(0,0,W,H);
+  if(style!=='relief') drawTiles(ctx,'imagery',v);
+  if(style!=='imageonly'){
+    const pass=a=>{ if(a<=0) return; ctx.globalCompositeOperation='multiply'; ctx.globalAlpha=Math.min(1,a); drawTiles(ctx,'hill',v); ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over'; };
+    pass(Math.min(1,s)); pass(s-1);
+    const l=Math.round(36*Math.min(s,1.5));
+    ctx.globalCompositeOperation='screen'; ctx.fillStyle=`rgb(${l},${l},${l})`; ctx.fillRect(0,0,W,H); ctx.globalCompositeOperation='source-over';
+  }
+  const vg=ctx.createRadialGradient(W/2,H/2,H*0.45,W/2,H/2,H*0.85); vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,10,20,.35)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+  /* --- พื้นที่ที่ค้นหา --- */
+  const r=S.cur, geo=r.geojson;
+  if($('cRegion').checked && geo && geoPath(ctx,geo,v)){
+    ctx.fillStyle=hatch(); ctx.fill('evenodd');
+    ctx.lineJoin='round'; ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=7; ctx.stroke();
+    ctx.strokeStyle='#e0780f'; ctx.lineWidth=4; ctx.setLineDash([16,8]); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  /* --- ขอบเขตการปกครอง --- */
+  if(S.bord){
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    if($('cSub').checked) for(const b of S.bord.filter(b=>b.lvl==='8')){ ctx.strokeStyle='rgba(0,0,0,.25)'; ctx.lineWidth=2.4; ctx.setLineDash([]); polyline(ctx,b.pts); ctx.strokeStyle='rgba(255,255,255,.6)'; ctx.lineWidth=1.1; ctx.setLineDash([2,5]); polyline(ctx,b.pts); }
+    if($('cDistrict').checked) for(const b of S.bord.filter(b=>b.lvl==='6')){ ctx.strokeStyle='rgba(0,0,0,.3)'; ctx.lineWidth=3.4; ctx.setLineDash([]); polyline(ctx,b.pts); ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1.5; ctx.setLineDash([3,6]); polyline(ctx,b.pts); }
+    if($('cBorder').checked){
+      for(const b of S.bord.filter(b=>b.lvl==='4')){ ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.lineWidth=5.5; ctx.setLineDash([]); polyline(ctx,b.pts); ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=2.8; ctx.setLineDash([14,8]); polyline(ctx,b.pts); }
+      for(const b of S.bord.filter(b=>b.lvl==='2')){ ctx.strokeStyle='rgba(0,0,0,.5)'; ctx.lineWidth=7; ctx.setLineDash([]); polyline(ctx,b.pts); ctx.strokeStyle='#fff'; ctx.lineWidth=3.5; ctx.setLineDash([26,7,5,7]); polyline(ctx,b.pts); }
+    }
+    ctx.setLineDash([]);
+  }
+
+  /* --- แม่น้ำ --- */
+  if($('cRiver').checked && S.riv){
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    const vis=S.riv.list.filter(o=>o.main||(o.name&&o.len>120)||o.len>350);
+    for(const o of vis){ const w=o.main?5:(o.name?2.6:1.8); ctx.strokeStyle='rgba(255,255,255,.45)'; ctx.lineWidth=w+2.4; polyline(ctx,o.pts); ctx.strokeStyle=o.main?'#2a8fe0':'#4aa6ea'; ctx.lineWidth=w; polyline(ctx,o.pts); }
+  }
+
+  /* --- ป้ายชื่อ (ตามลำดับความสำคัญ) --- */
+  Object.values(BOX).forEach(b=>placed.push([b.x,b.y,b.x+b.w,b.y+b.h]));
+  const P=S.P;
+
+  // ชื่อพื้นที่หลัก
+  const fb=S.fbox, [mxp,myp]=pr(v,(fb.w+fb.e)/2,(fb.s+fb.n)/2);
+  if(!r.fromView) place(strip(r.name),mxp,myp,{size:60,weight:800,color:'#fff7e0',halo:'rgba(120,50,0,.9)',haloW:12,spacing:2},true);
+
+  if($('cPeak').checked && P){
+    for(const o of P.ranges.slice(0,10)) place(o.name,o.x,o.y,{size:34,weight:600,italic:true,color:'#fff',halo:'rgba(50,30,10,.8)',spacing:5});
+  }
+  if($('cRiver').checked && S.riv){
+    for(const name of S.riv.top){
+      const ways=S.riv.list.filter(o=>o.name===name).sort((a,b)=>b.len-a.len);
+      const o=ways[0]; if(!o) continue;
+      const opt={size:24,weight:600,italic:true,color:'#d6ecff',halo:'rgba(4,40,80,.9)'}, w=tw(name,opt);
+      for(const f of [.5,.3,.7,.2,.8]){
+        if(o.len*0.9<w) break;
+        const d=o.len*f, p=pointAt(o.pts,d), a=pointAt(o.pts,Math.max(0,d-w/2)), b=pointAt(o.pts,Math.min(o.len,d+w/2));
+        if(p[0]<90||p[0]>W-90||p[1]<90||p[1]>H-90) continue;
+        let ang=Math.atan2(b[1]-a[1],b[0]-a[0]); if(ang>Math.PI/2||ang<-Math.PI/2) ang+=Math.PI;
+        if(placeRot(name,p[0],p[1],ang,opt)) break;
+      }
+    }
+  }
+  if($('cProv').checked && P){
+    const mainN=strip(r.name);
+    for(const o of P.provs){ const n=strip(o.name); if(!r.fromView&&(n===mainN||mainN.includes(n)||n.includes(mainN))) continue; place(n,o.x,o.y,{size:30,weight:800,color:'#fff',halo:'rgba(0,0,0,.8)',spacing:1}); }
+  }
+  if($('cPark').checked && P){
+    for(const o of P.parks.slice(0,18)){
+      const n=o.name.replace(/^(อุทยานแห่งชาติ|วนอุทยาน)\s*/,'');
+      if(place(n,o.x+16,o.y,{size:21,weight:600,align:'left',color:'#d9ffd2',halo:'rgba(0,55,15,.92)'})) parkIcon(o.x,o.y);
+    }
+  }
+  if($('cTown').checked && P){
+    for(const o of P.towns){
+      const sz=o.city?25:21;
+      if(!place(strip(o.name),o.x+13,o.y,{size:sz,weight:o.city?800:600,align:'left',color:'#fff',halo:'rgba(0,0,0,.75)'})) continue;
+      ctx.beginPath(); ctx.arc(o.x,o.y,o.city?8:6,0,7); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=3; ctx.strokeStyle='#222'; ctx.stroke();
+    }
+  }
+  if($('cDistrict').checked && P){
+    for(const o of P.dists.slice(0,70)) if(o.inView) place(strip(o.name),o.x,o.y,{size:19,weight:400,color:'#fff',halo:'rgba(0,0,0,.75)'});
+  }
+  if($('cSub').checked && P && S.span<1.2){
+    for(const o of P.subs.slice(0,90)) place(strip(o.name),o.x,o.y,{size:16,weight:400,italic:true,color:'#fff8d8',halo:'rgba(0,0,0,.7)'});
+  }
+  if($('cPeak').checked && P){
+    for(const o of P.peaks.slice(0,14)){
+      const label=o.name+(o.ele?` ${Math.round(o.ele).toLocaleString('en-US')} ม.`:'');
+      if(!place(label,o.x,o.y-20,{size:20,weight:600,color:'#fff4d6',halo:'rgba(60,30,0,.85)'})) continue;
+      ctx.beginPath(); ctx.moveTo(o.x,o.y-9); ctx.lineTo(o.x+10,o.y+7); ctx.lineTo(o.x-10,o.y+7); ctx.closePath();
+      ctx.fillStyle='#8a4a1c'; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle='#fff'; ctx.stroke();
+    }
+    for(const o of P.lakes.slice(0,8)) place(o.name,o.x,o.y,{size:20,weight:400,italic:true,color:'#cfeaff',halo:'rgba(5,40,90,.85)'});
+  }
+
+  /* --- องค์ประกอบแผนที่ --- */
+  drawTitle(r); drawLegend(); if($('cInfo').checked){ drawInset(); drawInfo(r); }
+  drawCompass(); drawScale();
+  txt('ภาพภูมิประเทศ: Esri, Maxar, Earthstar Geographics, USGS  |  ข้อมูลแม่น้ำ/ขอบเขต: © OpenStreetMap contributors',W-24,H-16,{size:16,weight:400,align:'right',color:'#fff',halo:'rgba(0,0,0,.8)',haloW:4});
+  ctx.restore();
+}
+
+function placeholder(){
+  const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,'#1c3a4a'); g.addColorStop(1,'#0c1a23');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  txt('🗺️',W/2,H/2-90,{size:120,halo:null});
+  txt('พิมพ์ชื่อสถานที่ แล้วกดปุ่ม “ค้นหา”',W/2,H/2+30,{size:48,weight:600,color:'#cfe3ec',halo:null});
+  txt('แผนที่ภูมิประเทศจะแสดงที่นี่',W/2,H/2+95,{size:30,weight:400,color:'#8fb0bf',halo:null});
+}
+
+function drawTitle(r){
+  const b=BOX.title; card(b,0.85);
+  txt('แผนที่ภูมิประเทศ',b.x+30,b.y+42,{size:30,weight:600,align:'left',color:'#5b4630',halo:null});
+  let size=76, name=strip(r.name); const maxW=b.w-60;
+  while(size>34 && tw(name,{size,weight:800})>maxW) size-=2;
+  txt(name,b.x+30,b.y+105,{size,weight:800,align:'left',color:'#16202a',halo:null});
+  txt('ภูมิประเทศ เทือกเขา ลุ่มน้ำ และที่ตั้งสำคัญโดยรอบ',b.x+30,b.y+165,{size:28,weight:400,align:'left',color:'#33414d',halo:null});
+}
+function parkIcon(x,y){
+  ctx.save(); ctx.translate(x,y); ctx.beginPath(); ctx.moveTo(0,-12); ctx.lineTo(10,0); ctx.lineTo(0,12); ctx.lineTo(-10,0); ctx.closePath();
+  ctx.fillStyle='#2fa84f'; ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle='#fff'; ctx.stroke(); ctx.restore();
+}
+function drawLegend(){
+  const b=BOX.legend; card(b,0.88);
+  txt('สัญลักษณ์',b.x+26,b.y+40,{size:32,weight:800,align:'left',color:'#16202a',halo:null});
+  ctx.strokeStyle='#999'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(b.x+22,b.y+70); ctx.lineTo(b.x+b.w-22,b.y+70); ctx.stroke();
+  const rows=[['hatch','พื้นที่ที่ค้นหา'],['prov','ขอบเขตจังหวัด/รัฐ'],['dist','ขอบเขตอำเภอ'],['sub','ขอบเขตตำบล'],['country','ขอบเขตประเทศ'],['river','แม่น้ำสายหลัก'],['peak','ยอดเขา'],['park','อุทยานแห่งชาติ'],['town','เมือง/ที่ตั้งสำคัญ']];
+  rows.forEach(([k,label],i)=>{
+    const y=b.y+112+i*48, x=b.x+26;
+    ctx.save(); ctx.lineCap='round';
+    if(k==='hatch'){ ctx.fillStyle=hatch(); ctx.fillRect(x,y-15,76,30); ctx.strokeStyle='#e0780f'; ctx.lineWidth=3; ctx.setLineDash([10,5]); ctx.strokeRect(x,y-15,76,30); }
+    if(k==='prov'){ ctx.strokeStyle='#555'; ctx.lineWidth=3; ctx.setLineDash([12,7]); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+76,y); ctx.stroke(); }
+    if(k==='dist'){ ctx.strokeStyle='#777'; ctx.lineWidth=2.2; ctx.setLineDash([3,6]); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+76,y); ctx.stroke(); }
+    if(k==='sub'){ ctx.strokeStyle='#888'; ctx.lineWidth=1.6; ctx.setLineDash([2,5]); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+76,y); ctx.stroke(); }
+    if(k==='country'){ ctx.strokeStyle='#222'; ctx.lineWidth=4; ctx.setLineDash([22,6,4,6]); ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+76,y); ctx.stroke(); }
+    if(k==='river'){ ctx.strokeStyle='#2a8fe0'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(x,y+5); ctx.quadraticCurveTo(x+38,y-18,x+76,y+5); ctx.stroke(); }
+    if(k==='peak'){ ctx.beginPath(); ctx.moveTo(x+38,y-14); ctx.lineTo(x+52,y+10); ctx.lineTo(x+24,y+10); ctx.closePath(); ctx.fillStyle='#8a4a1c'; ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+    if(k==='park'){ ctx.beginPath(); ctx.moveTo(x+38,y-14); ctx.lineTo(x+50,y); ctx.lineTo(x+38,y+14); ctx.lineTo(x+26,y); ctx.closePath(); ctx.fillStyle='#2fa84f'; ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2.5; ctx.stroke(); }
+    if(k==='town'){ ctx.beginPath(); ctx.arc(x+38,y,9,0,7); ctx.fillStyle='#fff'; ctx.fill(); ctx.strokeStyle='#222'; ctx.lineWidth=3.5; ctx.stroke(); }
+    ctx.restore();
+    txt(label,x+100,y,{size:25,weight:400,align:'left',color:'#16202a',halo:null});
+  });
+}
+function drawInset(){
+  const b=BOX.inset, iv=S.iv; if(!iv) return;
+  ctx.save(); rr(ctx,b.x,b.y,b.w,b.h,16); ctx.clip();
+  ctx.fillStyle='#dfe6ea'; ctx.fillRect(b.x,b.y,b.w,b.h);
+  ctx.translate(b.x,b.y); drawTiles(ctx,'gray',iv);
+  const fb=S.fbox, [x1,y1]=pr(iv,fb.w,fb.n), [x2,y2]=pr(iv,fb.e,fb.s);
+  const cx=(x1+x2)/2, cy=(y1+y2)/2, w=Math.max(16,x2-x1), h=Math.max(16,y2-y1);
+  ctx.fillStyle='rgba(230,50,40,.25)'; ctx.fillRect(cx-w/2,cy-h/2,w,h);
+  ctx.strokeStyle='#e0281c'; ctx.lineWidth=4; ctx.strokeRect(cx-w/2,cy-h/2,w,h);
+  ctx.restore();
+  ctx.save(); rr(ctx,b.x,b.y,b.w,b.h,16); ctx.lineWidth=5; ctx.strokeStyle='#fff'; ctx.stroke(); ctx.lineWidth=2; ctx.strokeStyle='#445'; ctx.stroke(); ctx.restore();
+  txt('ที่ตั้งโดยสังเขป',b.x+16,b.y+22,{size:20,weight:600,align:'left',color:'#222',halo:'rgba(255,255,255,.9)',haloW:5});
+}
+function drawInfo(r){
+  const b=BOX.info; card(b,0.88);
+  const fb=S.fbox, clat=(fb.s+fb.n)/2, clon=(fb.w+fb.e)/2, P=S.P;
+  const wk=Math.abs(fb.e-fb.w)*111.32*Math.cos(clat*Math.PI/180), hk=Math.abs(fb.n-fb.s)*110.57;
+  const x=b.x+26; let y=b.y+36;
+  txt(strip(r.name),x,y,{size:30,weight:800,align:'left',color:'#16202a',halo:null}); y+=40;
+  const o={size:21,weight:400,color:'#26343f',halo:null};
+  for(const ln of wrap(r.display_name||'',b.w-52,o,2)){ txt(ln,x,y,{...o,align:'left'}); y+=28; }
+  txt(`ขนาดโดยประมาณ ${Math.round(wk).toLocaleString('en-US')} × ${Math.round(hk).toLocaleString('en-US')} กม.   พิกัด ${clat.toFixed(3)}°N, ${clon.toFixed(3)}°E`,x,y,{...o,align:'left'}); y+=28;
+  const line=(label,arr)=>{ if(!arr||!arr.length) return; txt(wrap(label+arr.join(', '),b.w-52,o,1)[0],x,y,{...o,align:'left'}); y+=28; };
+  line('แม่น้ำสำคัญ: ',S.riv&&S.riv.top.slice(0,5));
+  line('เทือกเขา: ',P&&P.ranges.slice(0,4).map(q=>q.name));
+  line('อุทยานแห่งชาติ: ',P&&P.parks.slice(0,4).map(q=>q.name.replace(/^อุทยานแห่งชาติ\s*/,'')));
+  if(P&&P.peaks.length&&P.peaks[0].ele){ const p=P.peaks[0]; txt(`ยอดเขาสูงสุดในกรอบ: ${p.name} (${Math.round(p.ele).toLocaleString('en-US')} ม.)`,x,y,{...o,align:'left'}); }
+}
+function drawCompass(){
+  const b=BOX.comp, cx=b.x+b.w/2, cy=b.y+b.h-75, R=68;
+  ctx.save(); ctx.translate(cx,cy);
+  ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fillStyle='rgba(255,255,255,.88)'; ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowBlur=14; ctx.fill(); ctx.shadowBlur=0; ctx.lineWidth=2.5; ctx.strokeStyle='#334'; ctx.stroke();
+  ctx.strokeStyle='#99a'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(-R+8,0); ctx.lineTo(R-8,0); ctx.moveTo(0,R-8); ctx.lineTo(0,-R+8); ctx.stroke();
+  // เข็มทิศ (ครึ่งดำ/ครึ่งขาว)
+  ctx.beginPath(); ctx.moveTo(0,-R*0.82); ctx.lineTo(-R*0.26,R*0.5); ctx.lineTo(0,R*0.28); ctx.closePath(); ctx.fillStyle='#16202a'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0,-R*0.82); ctx.lineTo(R*0.26,R*0.5); ctx.lineTo(0,R*0.28); ctx.closePath(); ctx.fillStyle='#fff'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#16202a'; ctx.stroke();
+  ctx.restore();
+  txt('N',cx,cy-R-26,{size:46,weight:800,color:'#fff',halo:'rgba(0,0,0,.85)',haloW:9});
+}
+function niceLen(m){ const p=10**Math.floor(Math.log10(m)), f=m/p; return (f>=5?5:f>=2?2:1)*p; }
+function drawScale(){
+  const b=BOX.scale, v=S.view, lat=ilat(v.ny0+v.hn/2);
+  const mpp=40075016.686*Math.cos(lat*Math.PI/180)/v.K;
+  const len=niceLen(mpp*320), px=len/mpp; card(b,0.88);
+  const x0=b.x+(b.w-px)/2-10, y=b.y+62, hh=14;
+  txt('มาตราส่วน',b.x+26,b.y+26,{size:20,weight:600,align:'left',color:'#16202a',halo:null});
+  ctx.fillStyle='#16202a'; ctx.fillRect(x0,y,px/2,hh); ctx.fillStyle='#fff'; ctx.fillRect(x0+px/2,y,px/2,hh);
+  ctx.strokeStyle='#16202a'; ctx.lineWidth=2.5; ctx.strokeRect(x0,y,px,hh);
+  const f=m=>m>=1000?String(+(m/1000).toFixed(1)):String(Math.round(m)), unit=len>=1000?'กม.':'ม.';
+  const o={size:22,weight:600,color:'#16202a',halo:null};
+  txt('0',x0,y+hh+22,o); txt(f(len/2),x0+px/2,y+hh+22,o); txt(f(len)+' '+unit,x0+px+8,y+hh+22,{...o,align:'center'});
+}
+
+/* ================= ขั้นตอนหลัก ================= */
+function busy(on,msg){ $('busy').classList.toggle('show',on); if(msg) $('busyTxt').textContent=msg; }
+const status = t => $('status').textContent=t;
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const needLayers = () => { const s=$('style').value; return s==='imagery'?['imagery','hill']:s==='relief'?['hill']:['imagery']; };
+
+async function build(r){
+  const tok=++S.token; S.cur=r; $('save').disabled=true;
+  busy(true,'กำลังเตรียมแผนที่…');
+  const bb=r.boundingbox.map(Number);                       // s,n,w,e
+  const fb={s:bb[0],n:bb[1],w:bb[2],e:bb[3]}; S.fbox=fb;
+  const clat=(fb.s+fb.n)/2, clon=(fb.w+fb.e)/2;
+  const b={...fb}, minSpan=r.fromView?0:0.7;                             // ขั้นต่ำสำหรับสถานที่ขนาดเล็ก (องศา)
+  if(b.e-b.w<minSpan){ b.w=clon-minSpan/2; b.e=clon+minSpan/2; }
+  if(b.n-b.s<minSpan*.8){ b.s=clat-minSpan*.4; b.n=clat+minSpan*.4; }
+  const pad=r.fromView?1.0:+$('pad').value;
+  const nx0=mx(b.w),nx1=mx(b.e),ny0=my(b.n),ny1=my(b.s), cx=(nx0+nx1)/2, cy=(ny0+ny1)/2;
+  const wn=Math.min(1,Math.max((nx1-nx0)*pad,(ny1-ny0)*pad*W/H));
+  S.view=makeView(cx,cy,wn,W,H);
+  S.iv=makeView(cx,cy,Math.min(0.9,Math.max(wn*5,16/360)),BOX.inset.w,BOX.inset.h);
+  S.ready=false; startOverlays();
+
+  const layers=needLayers();
+  let total=layers.reduce((a,l)=>a+tileList(S.view,l).length,0)+tileList(S.iv,'gray').length, done=0;
+  const prog=()=>{ done++; busy(true,`กำลังโหลดภาพภูมิประเทศ ${done}/${total}`); };
+  await Promise.all([...layers.map(l=>ensureTiles(l,S.view,prog)), ensureTiles('gray',S.iv,prog)]);
+  if(tok!==S.token) return;
+  try{ await Promise.race([Promise.all([document.fonts.load('800 40px Sarabun'),document.fonts.load('400 20px Sarabun'),document.fonts.load('italic 600 20px Sarabun')]),sleep(2500)]); }catch(e){}
+  S.ready=true; draw(); busy(false); $('save').disabled=false;
+}
+
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function renderLists(){
+  const el=$('lists'); if(!S.view){ el.innerHTML=''; return; }
+  const P=S.P||{peaks:[],ranges:[],parks:[],provs:[],dists:[],subs:[]};
+  const v=S.view, mpp=40075016.686*Math.cos(ilat(v.ny0+v.hn/2)*Math.PI/180)/v.K;
+  const wait=S.fin?null:'⏳ กำลังโหลด…';
+  const col=(title,items,empty)=>`<div class="lc"><h3>${title}${items.length?` <small>(${items.length})</small>`:''}</h3>${items.length?'<ul>'+items.map(i=>`<li>${i}</li>`).join('')+'</ul>':`<p class="none">${wait||empty||'ไม่พบข้อมูลในกรอบนี้'}</p>`}</div>`;
+  const rivers=S.riv?S.riv.top.map(n=>`${esc(n)} <small>(~${Math.round(S.riv.lens.get(n)*mpp/1000).toLocaleString('en-US')} กม. ในกรอบ)</small>`):[];
+  const subs=P.subs.filter(o=>o.inView);
+  el.innerHTML=
+    col('📍 จังหวัด',P.provs.map(o=>esc(strip(o.name))))+
+    col('🏘️ อำเภอ',P.dists.filter(o=>o.inView).map(o=>esc(strip(o.name))),'ไม่พบ (ข้อมูลอำเภอครอบคลุมประเทศไทย และแสดงเมื่อกรอบกว้างไม่เกิน ~6°)')+
+    (S.span<2.2?col('🏠 ตำบล',subs.slice(0,60).map(o=>esc(strip(o.name))).concat(subs.length>60?[`…และอีก ${subs.length-60} ตำบล`]:[]),'ไม่พบ'):'')+
+    col('🏔️ เทือกเขา/ทิวเขา',P.ranges.map(o=>esc(o.name)),'ไม่พบเทือกเขาที่ระบุชื่อใน OpenStreetMap')+
+    col('🌲 อุทยานแห่งชาติ',P.parks.map(o=>esc(o.name)))+
+    col('🌊 แม่น้ำสายหลัก',rivers)+
+    col('⛰️ ยอดเขา',P.peaks.slice(0,12).map(o=>esc(o.name)+(o.ele?` <small>(${Math.round(o.ele).toLocaleString('en-US')} ม.)</small>`:'')));
+}
+
+/* ---- ดึงข้อมูลชื่อ/เส้น: เริ่มทันทีที่ค้นหา (ทำงานขนานกับการโหลดภาพภูมิประเทศ) ---- */
+function startOverlays(){
+  const tok=++S.otok;
+  S.P=S.riv=S.bord=null; S.rivEls=[]; S.fin=false;
+  const vb=viewBBox(S.view); S.span=vb.e-vb.w;
+  renderLists(); runOverlays(tok);
+}
+async function nomi(q,geom){
+  const vb=viewBBox(S.view);
+  const u=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=jsonv2&limit=40&accept-language=th&extratags=1&bounded=1&viewbox=${vb.w.toFixed(4)},${vb.n.toFixed(4)},${vb.e.toFixed(4)},${vb.s.toFixed(4)}`+(geom?'&polygon_geojson=1&polygon_threshold=0.002':'');
+  try{
+    const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),25000);
+    const r=await fetch(u,{signal:ctl.signal}); clearTimeout(t);
+    if(!r.ok) return null; const j=await r.json(); return Array.isArray(j)?j:null;
+  }catch(e){ return null; }
+}
+function nomiToEls(res,kind){
+  const els=[];
+  for(const r of res){
+    const name=(r.name||'').trim(); if(!name) continue;
+    const base={lat:+r.lat,lon:+r.lon}, ty=r.type||'';
+    if(kind==='park'){ if(ty==='national_park'||/อุทยานแห่งชาติ|national park/i.test(name)) els.push({...base,tags:{name,boundary:'national_park'}}); }
+    else if(kind==='range'){ if(/เทือกเขา|ทิวเขา|mountain range/i.test(name)||/mountain_range|ridge/.test(ty)) els.push({...base,tags:{name,natural:'mountain_range'}}); }
+    else if(kind==='peak'){ if(ty==='peak'||ty==='volcano') els.push({...base,tags:{name,natural:'peak',ele:r.extratags&&r.extratags.ele}}); }
+    else if(kind==='river'){
+      const g=r.geojson;
+      if(r.category==='waterway'&&(ty==='river'||/^แม่น้ำ/.test(name))&&g){
+        const lines=g.type==='LineString'?[g.coordinates]:g.type==='MultiLineString'?g.coordinates:[];
+        for(const ln of lines) els.push({geometry:ln.map(([lo,la])=>({lon:lo,lat:la})),tags:{name}});
+      }
+    }
+  }
+  return els;
+}
+async function runOverlays(tok){
+  const vb=viewBBox(S.view), span=vb.e-vb.w, inTH=overlapsThai(vb), fails=[];
+  const alive=()=>tok===S.otok;
+  const refresh=()=>{ if(!alive()) return; renderLists(); if(S.ready) draw(); };
+  const step=async(name,fn)=>{ if(!alive()) return; try{ await fn(); }catch(e){ console.error(name,e); fails.push(name+' ('+(e&&e.message||e)+')'); } };
+  const H0='[out:json][timeout:60];', bb=`${vb.s.toFixed(4)},${vb.w.toFixed(4)},${vb.n.toFixed(4)},${vb.e.toFixed(4)}`;
+  const say=m=>{ if(alive()) status(m); };
+
+  /* 1) จังหวัด/อำเภอ/ตำบลของไทย (GeoJSON) */
+  const thai=async()=>{
+    for(const [kind,ok,label] of [['prov',span<25,'จังหวัด'],['dist',span<6,'อำเภอ'],['sub',span<2.2,'ตำบล']]){
+      if(!ok) continue;
+      say(`กำลังโหลดขอบเขต${label} …`);
+      await step('ขอบเขต'+label,async()=>{
+        const data=await loadGeo(kind); if(!alive()) return;
+        if(!data){ fails.push('ขอบเขต'+label+' (โหลดไฟล์ไม่ได้)'); return; }
+        addThaiAdmin(kind,data); refresh();
+      });
+    }
+  };
+  /* 2) ชื่อจาก Nominatim (เซิร์ฟเวอร์เดียวกับช่องค้นหา) */
+  const nominatim=async()=>{
+    const qs=[['อุทยานแห่งชาติ','park',false],['เทือกเขา','range',false],['ทิวเขา','range',false],['แม่น้ำ','river',true],['ดอย','peak',false],['ภู','peak',false],['เขา','peak',false],['national park','park',false],['mountain range','range',false],['river','river',true],['peak','peak',false]];
+    let bad=0; await sleep(1200);
+    for(const [q,kind,geom] of qs){
+      if(!alive()||bad>=3) break;
+      if(span>14&&kind==='peak') continue;
+      await step('Nominatim:'+q,async()=>{
+        const res=await nomi(q,geom); if(!alive()) return;
+        if(!res){ bad++; return; }
+        const els=nomiToEls(res,kind);
+        if(kind==='river') processRivers(els,'nomi'); else processPoints(els);
+        refresh();
+      });
+      await sleep(1100);
+    }
+    if(bad>=3) fails.push('Nominatim');
+  };
+  /* 3) Overpass (ข้อมูลละเอียดกว่า แต่บางครั้งช้า/ล่ม) */
+  const overp=async()=>{
+    const jobs=[
+      ['ภูเขา/อุทยาน/เมือง',span<14,`${H0}(${span<9?`node["natural"="peak"]["name"](${bb});`:''}node["place"~"^(city|town)$"]["name"](${bb});nwr["natural"="mountain_range"]["name"](${bb});nwr["natural"="ridge"]["name"~"ทิวเขา|เทือกเขา"](${bb});nwr["boundary"="national_park"]["name"](${bb});relation["boundary"="protected_area"]["protect_class"="2"]["name"](${bb});way["natural"="water"]["water"~"^(reservoir|lake)$"]["name"](${bb}););out center tags;`,els=>processPoints(els)],
+      ['แม่น้ำ',span<7,`${H0}way["waterway"="river"](${bb});out geom qt;`,els=>processRivers(els,'ovp')],
+      inTH?['เส้นขอบประเทศ',span<12,`${H0}relation["boundary"="administrative"]["admin_level"="2"](${bb});out geom(${bb});`,els=>processBorders(els,true)]
+          :['ขอบเขตการปกครอง',span<9,`${H0}relation["boundary"="administrative"]["admin_level"~"^(2|4)$"](${bb});out geom(${bb});`,els=>processBorders(els,true)]
+    ];
+    if(!inTH) jobs.push(['ชื่อรัฐ/จังหวัด',span<14,`${H0}relation["boundary"="administrative"]["admin_level"="4"]["name"](${bb});out center tags;`,els=>processPoints(els)]);
+    for(const [name,ok,q,fn] of jobs){
+      if(!ok||!alive()) continue;
+      const els=await overpass(q); if(!alive()) return;
+      if(els){ await step(name,()=>{ fn(els); refresh(); }); } else fails.push('Overpass:'+name);
+    }
+  };
+
+  say('กำลังดึงชื่อภูเขา เทือกเขา อุทยาน แม่น้ำ และขอบเขตการปกครอง …');
+  await Promise.all([inTH?thai():Promise.resolve(), nominatim(), overp()]);
+  if(!alive()) return;
+  S.fin=true; refresh();
+  const P=S.P||{}, n=k=>(P[k]||[]).filter(o=>o.inView!==false).length;
+  let msg=`เสร็จสิ้น ✔ พบ: จังหวัด ${n('provs')} • อำเภอ ${n('dists')} • ตำบล ${n('subs')} • เทือกเขา ${n('ranges')} • อุทยานฯ ${n('parks')} • แม่น้ำ ${S.riv?S.riv.top.length:0} • ยอดเขา ${n('peaks')}`;
+  if(fails.length) msg+=` | ดึงไม่สำเร็จบางส่วน: ${[...new Set(fails)].join(', ')} → กด “🔄 ดึงข้อมูลชื่อ/เส้นใหม่”`;
+  status(msg);
+}
+
+async function doSearch(){
+  const q=$('q').value.trim(); if(!q) return;
+  $('go').disabled=true; $('results').innerHTML=''; status('กำลังค้นหา “'+q+'” …'); busy(true,'กำลังค้นหาสถานที่…');
+  try{
+    const res=await geocode(q);
+    if(!res.length){ busy(false); status('ไม่พบสถานที่ “'+q+'” – ลองใช้ชื่ออื่น หรือเพิ่มคำว่า จังหวัด/อำเภอ'); return; }
+    res.forEach((r,i)=>{ r.name=r.name||r.display_name.split(',')[0]; });
+    const box=$('results');
+    res.forEach((r,i)=>{ const c=document.createElement('span'); c.className='chip'+(i?'':' on'); c.textContent=r.display_name.split(',').slice(0,3).join(', '); c.onclick=()=>{ [...box.children].forEach(x=>x.classList.remove('on')); c.classList.add('on'); choose(r); }; box.appendChild(c); });
+    await choose(res[0]);
+  }catch(e){ busy(false); status('ค้นหาไม่สำเร็จ – ตรวจสอบอินเทอร์เน็ต แล้วลองใหม่ (หากเปิดจากไฟล์ในเครื่องแล้วไม่ได้ ให้ลองเปิดผ่านเว็บเซิร์ฟเวอร์)'); }
+  finally{ $('go').disabled=false; }
+}
+
+function savePNG(){
+  try{
+    canvas.toBlob(b=>{
+      if(!b){ status('บันทึกไม่สำเร็จ'); return; }
+      const a=document.createElement('a'); const nm=(S.cur?strip(S.cur.name):'map').replace(/[\\/:*?"<>|\s]+/g,'_');
+      a.href=URL.createObjectURL(b); a.download=`แผนที่ภูมิประเทศ_${nm}.png`; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    },'image/png');
+  }catch(e){ status('บันทึกไม่สำเร็จ: ภาพถูกจำกัดสิทธิ์โดยเบราว์เซอร์ (CORS)'); }
+}
+
+/* ================= แผนที่โลกแบบโต้ตอบ (Leaflet) ================= */
+let WM=null, wmLayer=null;
+function initWorldMap(){
+  if(typeof L==='undefined'){ $('wmWrap').style.display='none'; return; }
+  const attr='Esri, Maxar, Earthstar Geographics | © OpenStreetMap contributors';
+  const esri=(svc,max)=>L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`,{maxZoom:max,attribution:attr});
+  const sat=esri('World_Imagery',17), topo=esri('World_Topo_Map',17);
+  const street=esri('World_Street_Map',17);
+  const osm=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'© OpenStreetMap contributors © CARTO'});
+  const hill=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',{maxZoom:16,opacity:.45});
+  WM=L.map('wmap',{center:[15,100],zoom:4,minZoom:2,maxBounds:[[-85,-180],[85,180]],maxBoundsViscosity:1,layers:[sat,hill],worldCopyJump:false});
+  L.control.layers({'ภาพถ่ายดาวเทียม':sat,'แผนที่ภูมิประเทศ':topo,'แผนที่ถนน (Esri)':street,'แผนที่ถนน (CARTO)':osm},{'เงาภูเขา':hill},{collapsed:true}).addTo(WM);
+  L.control.scale({imperial:false,metric:true}).addTo(WM);
+  $('wmWorld').onclick=()=>WM.setView([20,100],2);
+  $('wmMake').onclick=makeFromView;
+}
+function showOnWorld(r){
+  if(!WM) return;
+  if(wmLayer){ WM.removeLayer(wmLayer); wmLayer=null; }
+  const [s,n,w,e]=r.boundingbox.map(Number);
+  const bounds=L.latLngBounds([s,w],[n,e]);
+  const st={color:'#f0a02c',weight:3,dashArray:'8 6',fillColor:'#f0a02c',fillOpacity:.18};
+  const g=r.geojson;
+  wmLayer=(g&&(g.type==='Polygon'||g.type==='MultiPolygon'))?L.geoJSON(g,{style:st}):L.rectangle(bounds,st);
+  wmLayer.addTo(WM);
+  WM.fitBounds(bounds,{maxZoom:11,padding:[30,30]});
+  $('wmap').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function makeFromView(){
+  if(!WM) return;
+  const b=WM.getBounds(), cl=v=>Math.max(-85,Math.min(85,v)), cw=v=>Math.max(-180,Math.min(180,v));
+  const s=cl(b.getSouth()), n=cl(b.getNorth()), w=cw(b.getWest()), e=cw(b.getEast());
+  const c=WM.getCenter();
+  const r={name:'พื้นที่ที่เลือก',display_name:`มุมมองที่เลือกจากแผนที่โลก (ศูนย์กลาง ${c.lat.toFixed(3)}°, ${c.lng.toFixed(3)}°)`,boundingbox:[s,n,w,e],geojson:null,fromView:true};
+  $('results').innerHTML='';
+  if(wmLayer){ WM.removeLayer(wmLayer); wmLayer=null; }
+  build(r);
+  $('map').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function choose(r){ showOnWorld(r); return build(r); }
+
+/* ================= เหตุการณ์ ================= */
+$('go').onclick=doSearch;
+$('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(); });
+$('save').onclick=savePNG;
+$('retry').onclick=()=>{ if(S.view) startOverlays(); };
+let raf=0; const redraw=()=>{ cancelAnimationFrame(raf); raf=requestAnimationFrame(draw); };
+['cRegion','cBorder','cDistrict','cSub','cPark','cRiver','cPeak','cTown','cProv','cInfo'].forEach(id=>$(id).addEventListener('change',redraw));
+$('relief').addEventListener('input',redraw);
+$('style').addEventListener('change',async()=>{ if(!S.view) return; busy(true,'กำลังเปลี่ยนรูปแบบ…'); await Promise.all(needLayers().map(l=>ensureTiles(l,S.view))); draw(); busy(false); });
+$('pad').addEventListener('change',()=>{ if(S.cur) build(S.cur); });
+['ทุ่งกุลาร้องไห้','ขอนแก่น','เชียงใหม่','น่าน','กาญจนบุรี','ดอยอินทนนท์','เขาใหญ่','ภูเก็ต'].forEach(n=>{ const c=document.createElement('span'); c.className='chip'; c.textContent=n; c.onclick=()=>{ $('q').value=n; doSearch(); }; $('examples').appendChild(c); });
+initWorldMap();
+draw();
+</script>
+</body>
+</html>
